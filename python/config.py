@@ -5,9 +5,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Reading environment variables
-TOKEN = os.getenv('TOKEN')
 OPENAI_TOKEN = os.getenv('OPENAI_TOKEN')
-PERSIST_DIR = os.getenv('PERSIST_DIR')
-DOCSTORE_PATH = os.getenv('DOCSTORE_PATH')
-COMMAND_NAME = os.getenv("COMMAND_NAME", 'tomo')
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "tiny")
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
