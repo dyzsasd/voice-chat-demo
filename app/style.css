@@ -1,0 +1,15 @@
+/* frontend/style.css */
+body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    margin: 20px;
+}
+
+#transcript {
+    margin-top: 20px;
+    border: 1px solid #ccc;
+    padding: 10px;
+    height: 300px;
+    overflow-y: scroll;
+    text-align: left;
+}
