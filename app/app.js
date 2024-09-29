@@ -19,7 +19,7 @@ startButton.addEventListener('click', startChat);
 stopButton.addEventListener('click', stopChat);
 
 // Audio context for playing received audio data
-let audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let audioContext = null;
 
 // Function to generate a simple UUID or random string as session_id
 function generateSessionId() {
@@ -27,6 +27,14 @@ function generateSessionId() {
 }
 
 function startChat() {
+    // Create the AudioContext inside the user interaction
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Resume the AudioContext if it's in a suspended state
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+
     connectToServer();
     startRecording();
     startButton.disabled = true;
@@ -123,6 +131,13 @@ function startRecording() {
         micAvailable = true;
         globalStream = stream;
         inputAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Resume the inputAudioContext if it's in a suspended state
+        if (inputAudioContext.state === 'suspended') {
+            inputAudioContext.resume();
+        }
+
+
         let source = inputAudioContext.createMediaStreamSource(stream);
         processor = inputAudioContext.createScriptProcessor(256, 1, 1);
 
@@ -184,6 +199,11 @@ function stopRecording() {
 
 // Play received audio data
 function playAudio(arrayBuffer) {
+    // Resume the AudioContext if it's in a suspended state
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+
     audioContext.decodeAudioData(arrayBuffer.slice(0), function(decodedData) {
         let source = audioContext.createBufferSource();
         source.buffer = decodedData;
