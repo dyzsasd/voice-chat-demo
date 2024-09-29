@@ -1,10 +1,15 @@
 # backend/main.py
 
 import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-import numpy as np
+import os
+
+from fastapi import FastAPI, WebSocket
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
 import uvicorn
-from config import OPENAI_TOKEN
+
+from config import OPENAI_TOKEN, ROOT_DIR
 from utils.tts_engine import TTSEngine
 from utils.llm_engine import LLMEngine
 from session import Session
@@ -13,13 +18,23 @@ from session import Session
 # Initialize FastAPI app
 app = FastAPI()
 
+frontend_dir = os.path.join(ROOT_DIR, '../app')
+
+# Mount the 'frontend' directory as static files
+app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+
+@app.get("/")
+async def read_index():
+    return FileResponse(f'{frontend_dir}/index.html')
+
+
 # Initialize engines
-tts_engine = TTSEngine()
+tts_engine = TTSEngine(voice="en-US-AnaNeural")
 llm_engine = LLMEngine(OPENAI_TOKEN)
 
 active_connections = set()
 
-@app.get("/")
+@app.get("/health")
 async def get():
     return {"message": "LLM voice chat service is running"}
 
