@@ -8,20 +8,22 @@ let inputAudioContext = null;
 let processor = null;
 let globalStream = null;
 
-// 获取按钮元素
+let state = 'Idle';  // Possible states: 'Idle', 'Listening', 'Analysing', 'Playing'
+
+// Get button elements
 const startButton = document.getElementById('startButton');
 const stopButton = document.getElementById('stopButton');
 
-// 为按钮添加事件监听器
+// Add event listeners to buttons
 startButton.addEventListener('click', startChat);
 stopButton.addEventListener('click', stopChat);
 
-// 播放接收到的音频数据
+// Audio context for playing received audio data
 let audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
+// Function to generate a simple UUID or random string as session_id
 function generateSessionId() {
-    // 生成简单的UUID或随机字符串作为session_id
-    return Math.random().toString(36).substr(2, 9);
+    return Math.random().toString(36);
 }
 
 function startChat() {
@@ -29,6 +31,8 @@ function startChat() {
     startRecording();
     startButton.disabled = true;
     stopButton.disabled = false;
+    state = 'Listening';
+    showRecordingAnimation();
 }
 
 function stopChat() {
@@ -36,39 +40,74 @@ function stopChat() {
     disconnectFromServer();
     startButton.disabled = false;
     stopButton.disabled = true;
+    clearAnimation();
+    state = 'Idle';
+
+    // Close audio context and stop stream
+    if (processor && inputAudioContext) {
+        processor.disconnect();
+        inputAudioContext.close();
+        processor = null;
+        inputAudioContext = null;
+    }
+
+    if (globalStream) {
+        globalStream.getTracks().forEach(track => track.stop());
+        globalStream = null;
+    }
 }
 
-// 连接到服务器
+// Connect to the server
 function connectToServer() {
     const sessionId = generateSessionId();
     socket = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
 
-    // 设置 WebSocket 的二进制类型为 ArrayBuffer，以处理音频数据
+    // Set binary type to handle audio data
     socket.binaryType = 'arraybuffer';
 
     socket.onopen = function(event) {
         serverAvailable = true;
-        console.log('WebSocket 连接已建立');
+        console.log('WebSocket connection established');
     };
 
     socket.onmessage = function(event) {
-        // 从后端接收音频数据，播放音频
-        console.log("get msg from bff")
-        playAudio(event.data);
+        // Determine if the message is text
+        if (typeof event.data === "string") {
+            // It's a text message (probably JSON)
+            let message = JSON.parse(event.data);
+            if (message.type === "status") {
+                if (message.value === "analysing") {
+                    // Transition to Analysing state
+                    state = 'Analysing';
+                    // Show thinking animation
+                    showThinkingAnimation();
+                }
+            } else if (message.type === "audio") {
+                // Transition to Playing state
+                state = 'Playing';
+                // Clear any existing animations
+                clearAnimation();
+                // Decode base64 audio data and play it
+                let audioData = base64ToArrayBuffer(message.value);
+                playAudio(audioData);
+            }
+        } else {
+            console.log("received unsupported event")
+        }
     };
 
     socket.onclose = function(event) {
         serverAvailable = false;
-        console.log('WebSocket 连接已关闭');
+        console.log('WebSocket connection closed');
     };
 
     socket.onerror = function(event) {
-        console.error('WebSocket 错误：', event);
+        console.error('WebSocket error:', event);
         serverAvailable = false;
     };
 }
 
-// 断开与服务器的连接
+// Disconnect from the server
 function disconnectFromServer() {
     if (socket) {
         socket.close();
@@ -77,7 +116,7 @@ function disconnectFromServer() {
     }
 }
 
-// 开始录音并发送音频数据
+// Start recording and sending audio data
 function startRecording() {
     navigator.mediaDevices.getUserMedia({ audio: true })
     .then(stream => {
@@ -91,40 +130,43 @@ function startRecording() {
         processor.connect(inputAudioContext.destination);
 
         processor.onaudioprocess = function(e) {
+            if (state !== 'Listening') {
+                return;
+            }
             let inputData = e.inputBuffer.getChannelData(0);
             let outputData = new Int16Array(inputData.length);
 
-            // 将浮点音频数据转换为16位PCM格式
+            // Convert float audio data to 16-bit PCM
             for (let i = 0; i < inputData.length; i++) {
                 let s = Math.max(-1, Math.min(1, inputData[i]));
                 outputData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
 
-            // 发送16位PCM数据到服务器
+            // Send 16-bit PCM data to server
             if (socket && socket.readyState === WebSocket.OPEN) {
-                // 创建包含元数据的JSON字符串
+                // Create JSON string with metadata
                 let metadata = JSON.stringify({ sampleRate: inputAudioContext.sampleRate });
-                // 将元数据转换为字节数组
+                // Convert metadata to byte array
                 let metadataBytes = new TextEncoder().encode(metadata);
-                // 创建一个用于元数据长度的缓冲区（4字节，32位整数）
+                // Create a buffer for metadata length (4 bytes, 32-bit integer)
                 let metadataLength = new ArrayBuffer(4);
                 let metadataLengthView = new DataView(metadataLength);
-                // 在前4个字节中设置元数据的长度
-                metadataLengthView.setInt32(0, metadataBytes.byteLength, true); // 小端字节序
+                // Set metadata length in the first 4 bytes
+                metadataLengthView.setInt32(0, metadataBytes.byteLength, true); // Little endian
 
-                // 将元数据长度、元数据和音频数据组合成一个消息
+                // Combine metadata length, metadata, and audio data into one message
                 let combinedData = new Blob([metadataLength, metadataBytes, outputData.buffer]);
                 socket.send(combinedData);
             }
         };
     })
     .catch(e => {
-        console.error('无法访问麦克风：', e);
-        displayDiv.innerText = "🎤  无法访问麦克风  🎤";
+        console.error('Cannot access microphone:', e);
+        displayDiv.innerText = "🎤  Cannot access microphone  🎤";
     });
 }
 
-// 停止录音
+// Stop recording
 function stopRecording() {
     if (processor && inputAudioContext) {
         processor.disconnect();
@@ -134,20 +176,55 @@ function stopRecording() {
     }
 
     if (globalStream) {
-        // 停止所有音轨
+        // Stop all audio tracks
         globalStream.getTracks().forEach(track => track.stop());
         globalStream = null;
     }
 }
 
-// 播放音频
+// Play received audio data
 function playAudio(arrayBuffer) {
     audioContext.decodeAudioData(arrayBuffer.slice(0), function(decodedData) {
         let source = audioContext.createBufferSource();
         source.buffer = decodedData;
         source.connect(audioContext.destination);
         source.start(0);
+        source.onended = function() {
+            // Audio playback finished
+            // Transition back to Listening state
+            state = 'Listening';
+            showRecordingAnimation();
+        };
     }, function(error) {
-        console.error('解码音频数据时出错', error);
+        console.error('Error decoding audio data', error);
     });
+}
+
+// Utility function to convert base64 to ArrayBuffer
+function base64ToArrayBuffer(base64) {
+    let binary_string = window.atob(base64);
+    let len = binary_string.length;
+    let bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binary_string.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
+// Show recording animation (wave animation)
+function showRecordingAnimation() {
+    let animationContainer = document.getElementById('animationContainer');
+    animationContainer.innerHTML = '<div class="wave-animation"></div>';
+}
+
+// Show thinking animation (rotating circle)
+function showThinkingAnimation() {
+    let animationContainer = document.getElementById('animationContainer');
+    animationContainer.innerHTML = '<div class="thinking-animation"></div>';
+}
+
+// Clear animations
+function clearAnimation() {
+    let animationContainer = document.getElementById('animationContainer');
+    animationContainer.innerHTML = '';
 }

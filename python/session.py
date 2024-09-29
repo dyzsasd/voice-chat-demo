@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import threading
 
@@ -58,10 +59,8 @@ class Session:
         await self.receive_messages()
 
     async def stop(self):
-        print("setting exit event")
         # Signal exit
         self.exit_event.set()
-
         # Clean up resources
         if self.recorder:
             # Feed dummy data to unblock the queue
@@ -69,21 +68,14 @@ class Session:
                 self.recorder.audio_queue.put_nowait(b'')
             except Exception as e:
                 print(f"Error feeding dummy data: {e}")
-            print("recorder.shutdown()")
             self.recorder.shutdown()
-
-        print("recorder is shoutdown")
 
         # Wait for the recorder thread to finish
         if self.recorder_thread and self.recorder_thread.is_alive():
-            print("recorder_thread.join")
-            self.recorder_thread.join()
-        
+            self.recorder_thread.join(timeout=1)
         # Close the websocket if it's not already closed
         if not self.websocket.client_state.name == 'DISCONNECTED':
-            print("close socket")
             await self.websocket.close()
-
         print(f"Session {self.session_id} stopped.")
 
     def recorder_thread_func(self):
@@ -96,6 +88,7 @@ class Session:
                 full_sentence = self.recorder.text()
                 if full_sentence == "":
                     continue
+                # Process text
                 future = asyncio.run_coroutine_threadsafe(
                     self.process_text(full_sentence),
                     self.loop
@@ -106,10 +99,17 @@ class Session:
                     print(f"Error in process_text: {e}")
         except Exception as e:
             print(f"Recorder thread exception: {e}")
+        finally:
+            print("Shutting down recorder...")
+            if self.recorder:
+                self.recorder.shutdown()
 
     async def process_text(self, text):
         # Append user question
         self.history.append({"role": "user", "content": text})
+
+        # Send status to frontend to indicate processing started
+        await self.websocket.send_json({"type": "status", "value": "analysing"})
 
         # Generate response
         assistant_text = await self.llm_engine.generate_response(self.history)
@@ -123,7 +123,12 @@ class Session:
         async for chunk in self.tts_engine.synthesize(assistant_text):
             audio_chunks.append(chunk)
         response_audio = b"".join(audio_chunks)
-        await self.websocket.send_bytes(response_audio)
+
+        # Encode audio data as base64
+        audio_base64 = base64.b64encode(response_audio).decode('utf-8')
+
+        # Send audio data as JSON
+        await self.websocket.send_json({"type": "audio", "value": audio_base64})
 
     def decode_and_resample(self, audio_data, original_sample_rate, target_sample_rate):
         # Decode 16-bit PCM data to numpy array

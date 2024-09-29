@@ -27,12 +27,12 @@ async def get():
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     loop = asyncio.get_running_loop()
-    handler = Session(websocket, session_id, loop, llm_engine, tts_engine)
-    active_connections.add(handler)
+    session = Session(websocket, session_id, loop, llm_engine, tts_engine)
+    active_connections.add(session)
     try:
-        await handler.start()
+        await session.start()
     finally:
-        active_connections.discard(handler)
+        active_connections.discard(session)
 
 
 @app.on_event("shutdown")

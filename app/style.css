@@ -13,3 +13,34 @@ body {
     overflow-y: scroll;
     text-align: left;
 }
+
+#animationContainer {
+    margin-top: 20px;
+}
+
+/* Wave animation */
+.wave-animation {
+    width: 100px;
+    height: 100px;
+    margin: 0 auto;
+    /* Replace 'wave.gif' with the path to your actual wave animation image or use CSS animations */
+    background: url('wave.gif') no-repeat center center;
+    background-size: contain;
+}
+
+/* Thinking animation */
+.thinking-animation {
+    width: 50px;
+    height: 50px;
+    margin: 0 auto;
+    border: 5px solid #ccc;
+    border-top: 5px solid #333;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* Spin animation */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
